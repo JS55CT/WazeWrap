@@ -21,10 +21,7 @@
   // Here we just get a reference to the existing WazeWrap object
   const WazeWrap = window.WazeWrap || {};
 
-  const WAZEWRAP_TAB_NAME = 'WazeWrap Settings';
-  const WAZEWRAP_TAB_ID = WAZEWRAP_TAB_NAME.toLowerCase().replace(/ /g, '-');
   const WAZEWRAP_SETTINGS_KEY = '_wazewrap_settings';
-  const WAZEWRAP_SCRIPT_ID = 'WW';  // Must match full version's 'WW' so SDK tab is shared
 
   // SDK object - can be passed via WazeWrap.Light.init(sdk)
   let sdk = null;
@@ -150,17 +147,17 @@
     // Try to create/register tab via SDK
     if (sdk?.Sidebar?.registerScriptTab) {
       try {
-        console.log('Attempting to register WazeWrap settings tab via SDK with ID "' + WAZEWRAP_SCRIPT_ID + '"');
-        const result = await sdk.Sidebar.registerScriptTab(WAZEWRAP_SCRIPT_ID);
+        console.log('Attempting to register WazeWrap settings tab via SDK');
+        const { tabLabel, tabPane } = await sdk.Sidebar.registerScriptTab();
 
         // New tab created - populate it
         const label = document.createElement('span');
         label.textContent = 'WazeWrap';
-        result.tabLabel.appendChild(label);
+        tabLabel.appendChild(label);
 
         const content = document.createElement('div');
         content.style.padding = '8px 16px';
-        content.id = 'WMEPIESettings';
+        content.id = 'wazewrap-settings';
 
         const pinInputType = wwSettings.editorPIN !== '' ? 'password' : 'text';
         const eyeIconDisplay = wwSettings.editorPIN !== '' ? 'inline-block' : 'none';
@@ -174,7 +171,7 @@
           '<div id="divShowAlertHistory" class="controls-container"><input type="checkbox" id="_cbShowAlertHistory" class="wwSettingsCheckbox" ' + (wwSettings.showAlertHistoryIcon ? 'checked' : '') + ' /><label for="_cbShowAlertHistory">Show alerts history</label></div>'
         ].join(' ');
 
-        result.tabPane.appendChild(content);
+        tabPane.appendChild(content);
 
         console.log('WazeWrap Light tab created successfully');
         if (!WazeWrap.Light) {
