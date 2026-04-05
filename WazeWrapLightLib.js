@@ -26,9 +26,6 @@
   // SDK object - can be passed via WazeWrap.Light.init(sdk)
   let sdk = null;
 
-  // Keep reference to Sidebar tab if created
-  let sidebarTabResult = null;
-
   // Settings object - matches full version's structure
   let wwSettings = {
     showAlertHistoryIcon: true,
@@ -554,14 +551,28 @@
   }
 
   /**
-   * Initialize WazeWrap Light with optional SDK object
-   * Can be called by scripts with their SDK instance for better integration
+   * Initialize WazeWrap Light with SDK object
+   * Must be called explicitly by scripts or Bootstrap after SDK is ready
    * Example: WazeWrap.Light.init(sdk)
+   *
+   * Two ways to use:
+   * 1. Via Bootstrap: automatic (Bootstrap calls this after getting SDK)
+   * 2. Via @require: manual (script calls this after getting SDK)
    */
-  function initWithSDK(sdkInstance) {
-    if (sdkInstance) {
-      sdk = sdkInstance;
-      console.log('WazeWrap Light initialized with SDK object');
+  async function initWithSDK(sdkInstance) {
+    if (!sdkInstance) {
+      console.warn('WazeWrap Light requires SDK object to initialize');
+      return;
+    }
+
+    sdk = sdkInstance;
+    console.log('WazeWrap Light initializing with SDK object');
+
+    // Initialize now that SDK is available
+    try {
+      await initLight();
+    } catch (err) {
+      console.error('Error initializing WazeWrap Light:', err);
     }
   }
 
@@ -598,10 +609,7 @@
     if (!WazeWrap.Light) {
       WazeWrap.Light = {};
     }
-    // Expose SDK init function
-    WazeWrap.Light.init = initWithSDK;
     WazeWrap.Light.Ready = true;
-    WazeWrap.Light.Version = '2025.03.22.00';
 
     // Note: Do NOT set WazeWrap.Version here - let full version set it
     // This allows full version to load after light without version conflict
@@ -612,9 +620,13 @@
     console.log('WazeWrap Light initialized successfully');
   }
 
-  // Start initialization
-  initLight().catch(err => {
-    console.error('Error initializing WazeWrap Light:', err);
-  });
+  // Ensure namespace exists and expose init function (but DON'T auto-initialize)
+  if (!WazeWrap.Light) {
+    WazeWrap.Light = {};
+  }
+  WazeWrap.Light.init = initWithSDK;
+
+  // WazeWrap Light will NOT be marked Ready until explicitly initialized via init()
+  console.log('WazeWrap Light library loaded (call WazeWrap.Light.init(sdk) to initialize)');
 
 })();
