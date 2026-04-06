@@ -546,28 +546,43 @@
   }
 
   /**
-   * Initialize WazeWrap Light with SDK object
-   * Must be called explicitly by scripts or Bootstrap after SDK is ready
-   * Example: WazeWrap.Light.init(sdk)
+   * Initialize WazeWrap Light with optional SDK object
    *
-   * Two ways to use:
-   * 1. Via Bootstrap: automatic (Bootstrap calls this after getting SDK)
-   * 2. Via @require: manual (script calls this after getting SDK)
+   * Called by:
+   * 1. WazeWrapLight.js standalone: passes SDK for UI tab creation
+   * 2. Bootstrap: passes null (SDK is reserved for the calling script)
    */
   async function initWithSDK(sdkInstance) {
-    if (!sdkInstance) {
-      console.warn('WazeWrap Light requires SDK object to initialize');
-      return;
+    // sdkInstance can be null or undefined (Bootstrap mode)
+    if (sdkInstance) {
+      sdk = sdkInstance;
+      console.log('WazeWrap Light initializing with SDK object');
+    } else {
+      console.log('WazeWrap Light initializing (library mode, no SDK)');
     }
 
-    sdk = sdkInstance;
-    console.log('WazeWrap Light initializing with SDK object');
-
-    // Initialize now that SDK is available
+    // Initialize now - will work with or without SDK
     try {
       await initLight();
     } catch (err) {
       console.error('Error initializing WazeWrap Light:', err);
+    }
+  }
+
+  /**
+   * Create UI tab for WazeWrap Light settings
+   * Called by WazeWrapLight.js (standalone mode) after SDK is ready
+   * Not called when loaded via Bootstrap (to avoid tab conflicts with calling script)
+   */
+  async function initUI(sdkInstance) {
+    if (sdkInstance) {
+      sdk = sdkInstance;
+    }
+
+    try {
+      await initSettingsTab();
+    } catch (e) {
+      console.warn('Could not initialize UI tab:', e);
     }
   }
 
@@ -583,12 +598,10 @@
 
     console.log('Initializing WazeWrap Light...');
 
-    // Initialize settings tab (creates "WWL" tab, separate from full version's "WW")
-    try {
-      await initSettingsTab();
-    } catch (e) {
-      console.warn('Could not initialize settings tab:', e);
-    }
+    // Note: Tab creation is skipped here when loaded as a library via Bootstrap
+    // (to avoid conflicting with the calling script's tab creation)
+    // Tab creation only happens when WazeWrapLight.js loads as a standalone userscript
+    // The library provides APIs (Settings, Alerts, Remote) which work with localStorage
 
     // Ensure toastr available
     try {
@@ -615,11 +628,12 @@
     console.log('WazeWrap Light initialized successfully');
   }
 
-  // Ensure namespace exists and expose init function (but DON'T auto-initialize)
+  // Ensure namespace exists and expose init functions
   if (!WazeWrap.Light) {
     WazeWrap.Light = {};
   }
   WazeWrap.Light.init = initWithSDK;
+  WazeWrap.Light.initUI = initUI;  // Expose UI initialization (called by WazeWrapLight.js standalone)
 
   // WazeWrap Light will NOT be marked Ready until explicitly initialized via init()
   console.log('WazeWrap Light library loaded (call WazeWrap.Light.init(sdk) to initialize)');
