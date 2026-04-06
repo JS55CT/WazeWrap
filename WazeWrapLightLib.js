@@ -84,50 +84,92 @@
   }
 
   /**
-   * Toastr management - smart loading
+   * Toastr management - identical to full version
    */
-  function isToastrLoaded() {
-    return typeof window.toastr !== 'undefined' &&
-           document.querySelector('.toastr-container-wazedev');
-  }
+  async function initializeToastr() {
+    let toastrSettings = {};
+    try {
+      function loadSettings() {
+        var loadedSettings = $.parseJSON(localStorage.getItem("WWToastr"));
+        var defaultSettings = {
+          historyLeftLoc: 35,
+          historyTopLoc: 40
+        };
+        toastrSettings = $.extend({}, defaultSettings, loadedSettings)
+      }
 
-  async function ensureToastrAvailable() {
-    if (isToastrLoaded()) {
-      return true;
-    }
-
-    console.log('Loading toastr for WazeWrap Light alerts');
-
-    // Load CSS from same repo as WazeWrap library
-    // If WazeWrap.Repo is set (from full version or explicitly), use that; otherwise default to 'wazedev'
-    const repo = WazeWrap.Repo || 'wazedev';
-    const cssUrl = 'https://' + repo + '.github.io/WazeWrap/toastr.css';
-    const jsUrl = 'https://' + repo + '.github.io/WazeWrap/toastr.js';
-
-    // Load CSS
-    const cssLink = document.createElement('link');
-    cssLink.rel = 'stylesheet';
-    cssLink.href = cssUrl;
-    document.head.appendChild(cssLink);
-
-    // Load JS
-    return new Promise((resolve) => {
-      $.getScript(jsUrl, function() {
-        if (window.toastr) {
-          toastr.options = {
-            positionClass: 'toast-bottom-right',
-            timeOut: 5000,
-            extendedTimeOut: 1000,
-            closeButton: true
+      function saveSettings() {
+        if (localStorage) {
+          var localsettings = {
+            historyLeftLoc: toastrSettings.historyLeftLoc,
+            historyTopLoc: toastrSettings.historyTopLoc
           };
-          console.log('Toastr loaded and configured for WazeWrap Light');
-          resolve(true);
-        } else {
-          console.error('Failed to load toastr');
-          resolve(false);
+
+          localStorage.setItem("WWToastr", JSON.stringify(localsettings));
         }
-      });
-    });
+      }
+      loadSettings();
+      $('head').append(
+        $('<link/>', {
+          rel: 'stylesheet',
+          type: 'text/css',
+          href: 'https://'+WazeWrap.Repo+'.github.io/WazeWrap/toastr.css'
+        }),
+        $('<style type="text/css">.toast-container-wazedev > div {opacity: 0.95;} .toast-top-center-wide {top: 32px;}</style>')
+      );
+
+      await $.getScript('https://'+WazeWrap.Repo+'.github.io/WazeWrap/toastr.js');
+      wazedevtoastr.options = {
+        target: '#map',
+        timeOut: 6000,
+        positionClass: 'toast-top-center-wide',
+        closeOnHover: false,
+        closeDuration: 0,
+        showDuration: 0,
+        closeButton: true,
+        progressBar: true
+      };
+
+      if ($('.WWAlertsHistory').length > 0)
+        return;
+      var $sectionToastr = $("<div>", { style: "padding:8px 16px", id: "wmeWWScriptUpdates" });
+      $sectionToastr.html([
+        '<div class="WWAlertsHistory" title="Script Alert History"><i class="fa fa-exclamation-triangle fa-lg"></i><div id="WWAlertsHistory-list"><div id="toast-container-history" class="toast-container-wazedev"></div></div></div>'
+      ].join(' '));
+      $("#WazeMap").append($sectionToastr.html());
+
+      $('.WWAlertsHistory').css('left', `${toastrSettings.historyLeftLoc}px`);
+      $('.WWAlertsHistory').css('top', `${toastrSettings.historyTopLoc}px`);
+
+      try {
+        await $.getScript("https://greasyfork.org/scripts/454988-jqueryui-custom-build/code/jQueryUI%20custom%20build.js");
+      }
+      catch (err) {
+        console.log("Could not load jQuery UI " + err);
+      }
+
+      if ($.ui) {
+        $('.WWAlertsHistory').draggable({
+          stop: function () {
+            let windowWidth = $('#map').width();
+            let panelWidth = $('#WWAlertsHistory-list').width();
+            let historyLoc = $('.WWAlertsHistory').position().left;
+            if ((panelWidth + historyLoc) > windowWidth) {
+              $('#WWAlertsHistory-list').css('left', Math.abs(windowWidth - (historyLoc + $('.WWAlertsHistory').width()) - panelWidth) * -1);
+            }
+            else
+              $('#WWAlertsHistory-list').css('left', 'auto');
+
+            toastrSettings.historyLeftLoc = $('.WWAlertsHistory').position().left;
+            toastrSettings.historyTopLoc = $('.WWAlertsHistory').position().top;
+            saveSettings();
+          }
+        });
+      }
+    }
+    catch (err) {
+      console.log(err);
+    }
   }
 
   /**
@@ -251,165 +293,125 @@
     return null;
   }
 
-  function getUserID() {
-    // Try to get from SDK first (live current user data)
-    try {
-      if (sdk?.State?.User?.getID) {
-        return sdk.State.User.getID();
-      }
-    } catch (e) {
-      // Fall through
+  /**
+   * Remote settings - identical to full version
+   * Light version: W.loginManager replaced with SDK or null fallback
+   */
+  function Remote() {
+    function sendPOST(scriptName, scriptSettings) {
+      return new Promise(function (resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "https://wazedev.com:8443", true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.onreadystatechange = function(e) {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200)
+              resolve(true)
+            else
+              reject(false)
+          }
+        }
+        xhr.send(JSON.stringify({
+          userID: (sdk?.State?.User?.getID?.() || null)?.toString(),
+          pin: wwSettings.editorPIN,
+          script: scriptName,
+          settings: scriptSettings
+        }));
+      });
     }
 
-    // Note: Full version doesn't store userID to localStorage
-    // It's retrieved dynamically from W.loginManager at runtime
-    return null;
-  }
+    this.SaveSettings = async function(scriptName, scriptSettings) {
+      if(wwSettings.editorPIN === "") {
+        console.error("Editor PIN not set");
+        return null;
+      }
+      if(scriptName === "") {
+        console.error("No script name provided");
+        return null;
+      }
+      try {
+        return await sendPOST(scriptName, scriptSettings);
+      }
+      catch(err) {
+        console.log(err);
+        return null;
+      }
+    }
 
-  /**
-   * Remote settings - with PIN fallback
-   */
-  if (!WazeWrap.Remote) {
-    WazeWrap.Remote = {
-      SaveSettings: async function(scriptName, settings, userID = null) {
-        const pin = wwSettings.editorPIN;
-        const resolvedUserID = userID || getUserID();
-
-        if (resolvedUserID && pin) {
-          // Server sync available
-          try {
-            return await new Promise((resolve, reject) => {
-              const xhr = new XMLHttpRequest();
-              xhr.open("POST", "https://wazedev.com:8443", true);
-              xhr.setRequestHeader('Content-Type', 'application/json');
-              xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4) {
-                  if (xhr.status === 200) {
-                    resolve(true);
-                  } else {
-                    reject(false);
-                  }
-                }
-              };
-              xhr.send(JSON.stringify({
-                userID: resolvedUserID.toString(),
-                pin: pin,
-                script: scriptName,
-                settings: settings
-              }));
-            });
-          } catch (e) {
-            console.log('Server sync failed, falling back to localStorage:', e);
-            WazeWrap.Settings.Save(scriptName, settings);
-            return null;
-          }
-        } else {
-          // Fall back to localStorage
-          WazeWrap.Settings.Save(scriptName, settings);
-          if (!pin) console.log('PIN not available, saved to localStorage only');
-          if (!resolvedUserID) console.log('UserID not available, saved to localStorage only');
+    this.RetrieveSettings = async function(script) {
+      if(wwSettings.editorPIN === "") {
+        console.error("Editor PIN not set");
+        return null;
+      }
+      if(script === "") {
+        console.error("No script name provided");
+        return null;
+      }
+      try {
+        let userID = sdk?.State?.User?.getID?.() || null;
+        if (!userID) {
+          console.warn("UserID not available");
           return null;
         }
-      },
-
-      RetrieveSettings: async function(scriptName, userID = null) {
-        const pin = wwSettings.editorPIN;
-        const resolvedUserID = userID || getUserID();
-
-        if (resolvedUserID && pin) {
-          // Try server first
-          try {
-            const response = await fetch(`https://wazedev.com/userID/${resolvedUserID}/PIN/${pin}/script/${scriptName}`);
-            const data = await response.json();
-            return data;
-          } catch (e) {
-            console.log('Server retrieve failed, falling back to localStorage:', e);
-            return WazeWrap.Settings.Load(scriptName);
-          }
-        } else {
-          // Use localStorage
-          return WazeWrap.Settings.Load(scriptName);
-        }
+        let response = await fetch(`https://wazedev.com/userID/${userID}/PIN/${wwSettings.editorPIN}/script/${script}`);
+        response = await response.json();
+        return response;
       }
-    };
+      catch(err) {
+        console.log(err);
+        return null;
+      }
+    }
+  }
+
+  // Instantiate Remote
+  if (!WazeWrap.Remote) {
+    WazeWrap.Remote = new Remote();
   }
 
   /**
-   * Alerts module with toastr support
+   * Alerts module with toastr support - identical to full version
    */
-  if (!WazeWrap.Alerts) {
-    WazeWrap.Alerts = {
-      success: function(scriptName, message) {
-        if (window.toastr) {
-          toastr.success(message, scriptName);
-        } else {
-          console.log(`[SUCCESS] ${scriptName}: ${message}`);
-        }
-      },
+  function Alerts() {
+    this.success = function (scriptName, message) {
+      $(wazedevtoastr.success(message, scriptName)).clone().prependTo('#WWAlertsHistory-list > .toast-container-wazedev').find('.toast-close-button').remove();
+    }
 
-      info: function(scriptName, message, disableTimeout, disableClickToClose, timeOut) {
-        if (window.toastr) {
-          if (disableTimeout) {
-            const oldTimeout = toastr.options.timeOut;
-            toastr.options.timeOut = 0;
-            toastr.info(message, scriptName);
-            toastr.options.timeOut = oldTimeout;
-          } else {
-            toastr.info(message, scriptName);
-          }
-        } else {
-          console.log(`[INFO] ${scriptName}: ${message}`);
-        }
-      },
+    this.info = function (scriptName, message, disableTimeout, disableClickToClose, timeOut) {
+      let options = {};
+      if (disableTimeout)
+        options.timeOut = 0;
+      else if (timeOut)
+        options.timeOut = timeOut;
 
-      warning: function(scriptName, message) {
-        if (window.toastr) {
-          toastr.warning(message, scriptName);
-        } else {
-          console.warn(`[WARNING] ${scriptName}: ${message}`);
-        }
-      },
+      if (disableClickToClose)
+        options.tapToDismiss = false;
 
-      error: function(scriptName, message) {
-        if (window.toastr) {
-          toastr.error(message, scriptName);
-        } else {
-          console.error(`[ERROR] ${scriptName}: ${message}`);
-        }
-      },
+      $(wazedevtoastr.info(message, scriptName, options)).clone().prependTo('#WWAlertsHistory-list > .toast-container-wazedev').find('.toast-close-button').remove();
+    }
 
-      debug: function(scriptName, message) {
-        if (window.toastr) {
-          toastr.info(message, `${scriptName} [DEBUG]`);
-        } else {
-          console.debug(`[DEBUG] ${scriptName}: ${message}`);
-        }
-      },
+    this.warning = function (scriptName, message) {
+      $(wazedevtoastr.warning(message, scriptName)).clone().prependTo('#WWAlertsHistory-list > .toast-container-wazedev').find('.toast-close-button').remove();
+    }
 
-      prompt: function(scriptName, message, defaultText = '', okFunction, cancelFunction) {
-        const result = prompt(message, defaultText);
-        if (result !== null && okFunction) {
-          okFunction(result);
-        } else if (result === null && cancelFunction) {
-          cancelFunction();
-        }
-      },
+    this.error = function (scriptName, message) {
+      $(wazedevtoastr.error(message, scriptName)).clone().prependTo('#WWAlertsHistory-list > .toast-container-wazedev').find('.toast-close-button').remove();
+    }
 
-      confirm: function(scriptName, message, okFunction, cancelFunction, okBtnText = "Ok", cancelBtnText = "Cancel") {
-        if (window.confirm(message)) {
-          if (okFunction) okFunction();
-        } else {
-          if (cancelFunction) cancelFunction();
-        }
-      }
-    };
-  }
+    this.debug = function (scriptName, message) {
+      wazedevtoastr.debug(message, scriptName);
+    }
 
-  /**
-   * ScriptUpdateMonitor - unchanged from full version
-   */
-  if (!WazeWrap.Alerts.ScriptUpdateMonitor) {
-    WazeWrap.Alerts.ScriptUpdateMonitor = class {
+    this.prompt = function (scriptName, message, defaultText = '', okFunction, cancelFunction) {
+      wazedevtoastr.prompt(message, scriptName, { promptOK: okFunction, promptCancel: cancelFunction, PromptDefaultInput: defaultText });
+    }
+
+    this.confirm = function (scriptName, message, okFunction, cancelFunction, okBtnText = "Ok", cancelBtnText = "Cancel") {
+      wazedevtoastr.confirm(message, scriptName, { confirmOK: okFunction, confirmCancel: cancelFunction, ConfirmOkButtonText: okBtnText, ConfirmCancelButtonText: cancelBtnText });
+    }
+
+    // ScriptUpdateMonitor - identical to full version
+    this.ScriptUpdateMonitor = class {
       #lastVersionChecked = '0';
       #scriptName;
       #currentVersion;
@@ -506,24 +508,24 @@
         const metaRegExp = this.#metaRegExp;
         return new Promise((resolve, reject) => {
           this.#GM_xmlhttpRequest({
-            nocache: true,
-            revalidate: true,
+            method: 'GET',
             url: metaUrl,
-            onload(res) {
-              if (res.status === 503) {
-                resolve(503);
-              } else if (res.status === 200) {
-                const versionMatch = res.responseText.match(metaRegExp);
-                if (versionMatch?.length !== 2) {
-                  throw new Error(`Invalid RegExp expression (${metaRegExp}) or version could not be found at ${metaUrl}`);
+            onload: function (response) {
+              if (response.status === 200) {
+                const matchResult = metaRegExp.exec(response.responseText);
+                if (matchResult && matchResult.length === 2) {
+                  resolve(matchResult[1]);
+                } else {
+                  resolve({ status: 'unable to parse version number' });
                 }
-                resolve(res.responseText.match(metaRegExp)[1]);
+              } else if (response.status === 503) {
+                resolve(503);
               } else {
-                resolve(res);
+                resolve({ status: response.status });
               }
             },
-            onerror(res) {
-              reject(res);
+            onerror: function () {
+              reject(new Error('error with version check'));
             }
           });
         });
@@ -534,15 +536,35 @@
         containers.forEach(elem => {
           const $alert = $(elem);
           const title = $alert.find('.toast-title').text();
-          if (title === this.#scriptName) {
-            const message = $alert.find('.toast-message').text();
-            if (/version .* is available/i.test(message)) {
-              $alert.click();
-            }
+          if (title.indexOf(this.#scriptName) >= 0) {
+            $alert.fadeOut(function () {
+              $(this).remove();
+            });
           }
         });
       }
     };
+  }
+
+  // Instantiate Alerts and assign ScriptUpdateMonitor
+  if (!WazeWrap.Alerts) {
+    WazeWrap.Alerts = new Alerts();
+  }
+
+  /**
+   * String utilities - identical to full version
+   */
+  function String() {
+    this.toTitleCase = function (str) {
+      return str.replace(/(?:^|\s)\w/g, function (match) {
+        return match.toUpperCase();
+      });
+    };
+  }
+
+  // Instantiate String
+  if (!WazeWrap.String) {
+    WazeWrap.String = new String();
   }
 
   /**
@@ -603,12 +625,9 @@
     // Tab creation only happens when WazeWrapLight.js loads as a standalone userscript
     // The library provides APIs (Settings, Alerts, Remote) which work with localStorage
 
-    // Ensure toastr available
+    // Initialize toastr (same as full version)
     try {
-      const toastrReady = await ensureToastrAvailable();
-      if (!toastrReady) {
-        console.warn('Toastr unavailable, alerts will use console fallback');
-      }
+      await initializeToastr();
     } catch (e) {
       console.warn('Error loading toastr:', e);
     }
