@@ -23,13 +23,20 @@
 
   const WAZEWRAP_SETTINGS_KEY = '_wazewrap_settings';
 
-  // SDK object - can be passed via WazeWrap.Light.init(sdk)
+  // SDK object - populated by initWithSDK(sdkInstance) called from WazeWrapLight.js loader
   let sdk = null;
 
   // Settings object - matches full version's structure
   let wwSettings = {
     showAlertHistoryIcon: true,
     editorPIN: ''
+  };
+
+  // User info - populated from SDK when available (userID is the userName)
+  let userInfo = {
+    userName: 'Unknown',
+    userID: 'Unknown',  // Same as userName - the user's login ID
+    rank: null
   };
 
   // Load settings from localStorage
@@ -312,7 +319,7 @@
           }
         }
         xhr.send(JSON.stringify({
-          userID: (sdk?.State?.User?.getID?.() || null)?.toString(),
+          userID: userInfo.userID,
           pin: wwSettings.editorPIN,
           script: scriptName,
           settings: scriptSettings
@@ -348,8 +355,8 @@
         return null;
       }
       try {
-        let userID = sdk?.State?.User?.getID?.() || null;
-        if (!userID) {
+        const userID = userInfo.userID;
+        if (!userID || userID === 'Unknown') {
           console.warn("UserID not available");
           return null;
         }
@@ -630,6 +637,23 @@
       await initializeToastr();
     } catch (e) {
       console.warn('Error loading toastr:', e);
+    }
+
+    // Populate user info from SDK if available
+    try {
+      const userSession = sdk?.State?.getUserInfo?.();
+      if (userSession) {
+        userInfo.userName = userSession.userName || 'Unknown';
+        userInfo.userID = userSession.userName || 'Unknown';  // userID is the userName
+        userInfo.rank = userSession.rank || null;
+      }
+    } catch (e) {
+      console.warn('Error retrieving user info from SDK:', e);
+    }
+
+    // Expose user info as WazeWrap.User
+    if (!WazeWrap.User) {
+      WazeWrap.User = userInfo;
     }
 
     // Mark light version ready
