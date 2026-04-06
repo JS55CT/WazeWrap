@@ -131,30 +131,25 @@
   }
 
   /**
-   * Settings tab management - shared between light and full versions
-   *
-   * TODO: Test with new SDK UserInterface API
-   * - Verify WazeWrap.UserInterface is available and has getTab/addTab methods
-   * - Test PIN storage in tab.data.PIN across page reloads
-   * - Test light and full versions sharing the same tab
-   * - Verify tab persistence and data synchronization
-   * - Implement fallback behavior if UserInterface unavailable
+   * Settings tab management - only used by WazeWrapLight.js (standalone userscript)
+   * This library version doesn't create UI tabs
    */
   async function initSettingsTab() {
-    // Try to create/register tab via SDK
+    // Try to create/register tab via SDK with script ID "WWL" (Light version)
+    // This creates a separate tab from full version's "WW" so they can coexist
     if (sdk?.Sidebar?.registerScriptTab) {
       try {
-        console.log('Attempting to register WazeWrap settings tab via SDK');
+        console.log('Attempting to register WazeWrap Light settings tab via SDK (WWL)');
         const { tabLabel, tabPane } = await sdk.Sidebar.registerScriptTab();
 
-        // New tab created - populate it
+        // New tab created - populate it with same UI as full version but _light element IDs
         const label = document.createElement('span');
-        label.textContent = 'WazeWrap';
+        label.textContent = 'WazeWrap Light';
         tabLabel.appendChild(label);
 
         const content = document.createElement('div');
         content.style.padding = '8px 16px';
-        content.id = 'wazewrap-settings';
+        content.id = 'wazewrap-settings-light';
 
         const pinInputType = wwSettings.editorPIN !== '' ? 'password' : 'text';
         const eyeIconDisplay = wwSettings.editorPIN !== '' ? 'inline-block' : 'none';
@@ -163,14 +158,14 @@
         content.innerHTML = [
           '<h4 style="margin-bottom:0px;"><b>WazeWrap</b></h4>',
           '<h6 style="margin-top:0px;">Light Version</h6>',
-          '<div id="divEditorPIN" class="controls-container">Editor PIN: <input type="' + pinInputType + '" size="10" id="wwEditorPIN" ' + (wwSettings.editorPIN !== '' ? 'disabled' : '') + '/>' + (wwSettings.editorPIN === '' ? '<button id="wwSetPin">Set PIN</button>' : '') + '<i class="fa fa-eye fa-lg" style="display:' + eyeIconDisplay + '" id="showWWEditorPIN" aria-hidden="true"></i></div><br/>',
-          '<div id="changePIN" class="controls-container" style="display:' + changePinDisplay + '"><button id="wwChangePIN">Change PIN</button></div>',
-          '<div id="divShowAlertHistory" class="controls-container"><input type="checkbox" id="_cbShowAlertHistory" class="wwSettingsCheckbox" ' + (wwSettings.showAlertHistoryIcon ? 'checked' : '') + ' /><label for="_cbShowAlertHistory">Show alerts history</label></div>'
+          '<div id="divEditorPIN_light" class="controls-container">Editor PIN: <input type="' + pinInputType + '" size="10" id="wwEditorPIN_light" ' + (wwSettings.editorPIN !== '' ? 'disabled' : '') + '/>' + (wwSettings.editorPIN === '' ? '<button id="wwSetPin_light">Set PIN</button>' : '') + '<i class="fa fa-eye fa-lg" style="display:' + eyeIconDisplay + '" id="showWWEditorPIN_light" aria-hidden="true"></i></div><br/>',
+          '<div id="changePIN_light" class="controls-container" style="display:' + changePinDisplay + '"><button id="wwChangePIN_light">Change PIN</button></div>',
+          '<div id="divShowAlertHistory_light" class="controls-container"><input type="checkbox" id="_cbShowAlertHistory_light" class="wwSettingsCheckbox" ' + (wwSettings.showAlertHistoryIcon ? 'checked' : '') + ' /><label for="_cbShowAlertHistory_light">Show alerts history</label></div>'
         ].join(' ');
 
         tabPane.appendChild(content);
 
-        console.log('WazeWrap Light tab created successfully');
+        console.log('WazeWrap Light tab created successfully (WWL)');
         if (!WazeWrap.Light) {
           WazeWrap.Light = {};
         }
@@ -194,15 +189,15 @@
       return null;
     }
 
-    // Set up event handlers for PIN input field and buttons
-    // Works whether tab was just created or already existed
+    // Set up event handlers for PIN input field and buttons (using _light suffixed IDs)
+    // Events update wwSettings which is shared via localStorage with full version
     try {
-      const pinInput = document.getElementById('wwEditorPIN');
+      const pinInput = document.getElementById('wwEditorPIN_light');
       if (pinInput) {
         pinInput.value = wwSettings.editorPIN;
       }
 
-      const eyeIcon = document.getElementById('showWWEditorPIN');
+      const eyeIcon = document.getElementById('showWWEditorPIN_light');
       if (eyeIcon && pinInput) {
         eyeIcon.addEventListener('mouseover', function() {
           pinInput.type = 'text';
@@ -212,7 +207,7 @@
         });
       }
 
-      const setPinBtn = document.getElementById('wwSetPin');
+      const setPinBtn = document.getElementById('wwSetPin_light');
       if (setPinBtn && pinInput && eyeIcon) {
         setPinBtn.addEventListener('click', function() {
           const pin = pinInput.value;
@@ -223,13 +218,13 @@
             pinInput.type = 'password';
             pinInput.disabled = true;
             setPinBtn.style.display = 'none';
-            const changePinDiv = document.getElementById('changePIN');
+            const changePinDiv = document.getElementById('changePIN_light');
             if (changePinDiv) changePinDiv.style.display = 'block';
           }
         });
       }
 
-      const changePinBtn = document.getElementById('wwChangePIN');
+      const changePinBtn = document.getElementById('wwChangePIN_light');
       if (changePinBtn && pinInput) {
         changePinBtn.addEventListener('click', function() {
           WazeWrap.Alerts.prompt('WazeWrap', 'This will <b>not</b> change the PIN stored with your settings, only the PIN that is stored on your machine to lookup/save your settings. \n\nChanging your PIN can result in a loss of your settings on the server and/or your local machine.  Proceed only if you are sure you need to change this value. \n\n Enter your new PIN', '', function(newPin) {
@@ -242,7 +237,7 @@
         });
       }
 
-      const historyCheckbox = document.getElementById('_cbShowAlertHistory');
+      const historyCheckbox = document.getElementById('_cbShowAlertHistory_light');
       if (historyCheckbox) {
         historyCheckbox.addEventListener('change', function() {
           wwSettings.showAlertHistoryIcon = this.checked;
@@ -588,7 +583,7 @@
 
     console.log('Initializing WazeWrap Light...');
 
-    // Initialize settings tab
+    // Initialize settings tab (creates "WWL" tab, separate from full version's "WW")
     try {
       await initSettingsTab();
     } catch (e) {
